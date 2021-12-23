@@ -1,6 +1,6 @@
 import numpy as np
 import csv
-import scipy.io as io
+import scipy.io as sio
 import pandas as pd
 
 # 加载数据
@@ -16,17 +16,17 @@ def load_data():
 # 写入文件
 def write_list(fileName, landmarks):
     fp = open(fileName, 'w+')
-    fp.write(
-        "version: 1" + '\n'
-                       "n_points: 68" + '\n'
-                                        "{" + '\n'
-    )
+    # fp.write(
+    #     "version: 1" + '\n'
+    #                    "n_points: 68" + '\n'
+    #                                     "{" + '\n'
+    # )
     for i in range(len(landmarks)):
         fp.write(str(landmarks[i][0]))
         fp.write(" ")
         fp.write(str(landmarks[i][1]) + '\n')
 
-    fp.write("}")
+    # fp.write("}")
     fp.close()
     return True
 
@@ -34,7 +34,7 @@ def write_list(fileName, landmarks):
 def load_colon():
     # path = "D:\D1+D2 lookfor peaks\colon.mat"
     path = "D:\DATA\colon\colon_9.mat"
-    colonMat = io.loadmat(path)
+    colonMat = sio.loadmat(path)
     print(colonMat.keys())
     AreaY = colonMat.get('AreaY')
     XPeak = colonMat.get('XPeak')
@@ -56,6 +56,231 @@ def load_colon():
     YPeak = YPeak.transpose()
 
     return AreaY, XPeak, YPeak
+
+## 加载matlab处理后的conlon数据
+def load_colon2():
+    # path = "D:\D1+D2 lookfor peaks\colon.mat"
+    Hpath = "D:\chromx\Height.mat"
+    HDict = sio.loadmat(Hpath)
+    Ypath = "D:\chromx\Tag.mat"
+    YDict = sio.loadmat(Ypath)
+    Apath = "D:\chromx\Area.mat"
+    ADict = sio.loadmat(Apath)
+    Height = HDict.get('Hr')
+    Area = ADict.get('Ar')
+    Y = np.squeeze(YDict.get('ActTag'))
+    return Height, Area, Y
+# load_colon2()
+
+def load_samples():
+    # path = "D:\D1+D2 lookfor peaks\colon.mat"
+    Hpath = "D:\chromx\Height.mat"
+    HDict = sio.loadmat(Hpath)
+    Ypath = "D:\chromx\Tag.mat"
+    YDict = sio.loadmat(Ypath)
+    Apath = "D:\chromx\Area.mat"
+    ADict = sio.loadmat(Apath)
+
+    Height = HDict.get('Hr')
+    Area = ADict.get('Ar')
+    Y = np.squeeze(YDict.get('ActTag'))
+
+    fileList = pd.read_excel(io="D:\chromx\\fileList.xlsx", header=None).T
+    diseaseTag = pd.read_excel(io="D:\DATA\data_analysis\diseaseTag.xlsx", sheet_name=None)
+    lung = diseaseTag.get("lung")
+    Thoracic = diseaseTag.get("thoracic")
+    lung_before = lung["before"]
+    lung_after = lung["after"]
+    Thoracic_before = Thoracic["before"]
+    Thoracic_after = Thoracic["after"]
+    lung_before_indices = []
+    Thoracic_before_indices = []
+    lung_after_indices = []
+    Thoracic_after_indices = []
+    i = 0
+    for f in fileList[0]:
+        if True in lung_before.str.contains(f, na=False).array:
+            lung_before_indices.append(i)
+        elif True in lung_after.str.contains(f, na=False).array:
+            lung_after_indices.append(i)
+        elif True in Thoracic_before.str.contains(f, na=False).array:
+            Thoracic_before_indices.append(i)
+        elif True in Thoracic_after.str.contains(f, na=False).array:
+            Thoracic_after_indices.append(i)
+        i = i + 1
+    diseaseDict = {'lung_before_indices':lung_before_indices, 'thoracic_before_indices':Thoracic_before_indices,
+                   'lung_after_indices':lung_after_indices, 'thoracic_after_indices':Thoracic_after_indices}
+
+    lung_series = pd.read_excel(io="D:\DATA\data_analysis\\lung_series.xlsx", sheet_name=None)
+    lung_series_dict = dict()
+    for name, lung in lung_series.items():
+
+        before_indices = []
+        for f in lung["before"][lung["before"].notna()]:
+            f_index = fileList[0][(fileList[0].str.contains(f, na=False))].index.tolist()
+            if len(f_index)==0:
+                print(f + " is empty")
+            else:
+                before_indices.append(f_index[0])
+
+        after_indices = []
+        for f in lung["after"][lung["after"].notna()]:
+            f_index = fileList[0][(fileList[0].str.contains(f, na=False))].index.tolist()
+            if len(f_index)==0:
+                print(f + " is empty")
+            else:
+                after_indices.append(f_index[0])
+        indices_dic = {"before":before_indices, "after":after_indices}
+        lung_series_dict[name] = indices_dic
+
+    return Height, Area, Y, diseaseDict, lung_series_dict
+
+def load_healthy_lung_thoracic():
+    Height, Area, Y, diseaseDict, _ = load_samples()
+    lung_before_indices = diseaseDict.get('lung_before_indices')
+    Thoracic_before_indices = diseaseDict.get('Thoracic_before_indices')
+    lung_after_indices = diseaseDict.get('lung_after_indices')
+    Thoracic_after_indices = diseaseDict.get('Thoracic_after_indices')
+
+    X = Area
+
+    healthy = X[Y == 0, :]
+    lung = X[lung_before_indices, :]
+    Thoracic = X[Thoracic_before_indices, :]
+    target_names = ['healthy', 'lung', 'Thoracic']
+
+    n_healthy = 20
+    n_lung_before = 20
+    n_Thoracic_before = 10
+
+    train_X = np.concatenate((healthy[0:n_healthy, :], lung[0:n_lung_before, :], Thoracic[0:n_Thoracic_before, :]),
+                             axis=0)
+    test_X = np.concatenate((healthy[n_healthy:, :], lung[n_lung_before:, :], Thoracic[n_Thoracic_before:, :]), axis=0)
+
+    train_Y = np.zeros((n_healthy + n_lung_before + n_Thoracic_before, 1), dtype='int')
+    train_Y[n_healthy:n_healthy + n_lung_before, :] += 1
+    train_Y[n_healthy + n_lung_before:, :] += 2
+    train_Y = np.squeeze(train_Y)
+
+    left_healthy = healthy.shape[0] - n_healthy
+    left_lung_before = len(lung_before_indices) - n_lung_before
+    left_Thoracic_before = len(Thoracic_before_indices) - n_Thoracic_before
+
+    test_Y = np.zeros((left_healthy + left_lung_before + left_Thoracic_before, 1), dtype='int')
+    test_Y[left_healthy:left_healthy + left_lung_before, :] += 1
+    test_Y[left_healthy + left_lung_before:, :] += 2
+    test_Y = np.squeeze(test_Y)
+
+    return train_X, train_Y, test_X, test_Y, target_names
+
+def load_healthy_lung():
+    Height, Area, Y, diseaseDict, lung_series_dict = load_samples()
+    lung_before_indices = diseaseDict.get('lung_before_indices')
+    lung_after_indices = diseaseDict.get('lung_after_indices')[0:3]
+
+    X = Area
+
+    healthy = X[Y == 0, :]
+    lung = X[lung_before_indices, :]
+    lung_after = X[lung_after_indices, :]
+    X = np.concatenate((healthy, lung, lung_after), axis=0)
+
+    target_names = ['healthy', 'lung']
+
+    n_healthy = healthy.shape[0]
+    n_lung_before = len(lung_before_indices)
+    n_lung_after = len(lung_after_indices)
+
+    Y = get_Y({0:n_healthy, 1:n_lung_before, 2:n_lung_after})
+
+    return X, Y, target_names
+
+def load_healthy_thoracic():
+    Height, Area, Y, diseaseDict, lung_series_dict = load_samples()
+    thoracic_before_indices = diseaseDict.get('thoracic_before_indices')
+    thoracic_after_indices = diseaseDict.get('thoracic_after_indices')[0:3]
+
+    X = Area
+
+    healthy = X[Y == 0, :]
+    thoracic = X[thoracic_before_indices, :]
+    thoracic_after = X[thoracic_after_indices, :]
+    X = np.concatenate((healthy, thoracic), axis=0)
+
+    target_names = ['healthy', 'thoracic']
+
+    n_healthy = healthy.shape[0]
+    n_thoracic_before = len(thoracic_before_indices)
+    n_thoracic_after = len(thoracic_after_indices)
+
+    Y = get_Y({0:n_healthy, 1:n_thoracic_before})
+
+    return X, Y, target_names
+
+def load_lung_series():
+    Height, Area, Y, diseaseDict, lung_series_dict = load_samples()
+    lung_before_indices = diseaseDict.get('lung_before_indices')
+    lung_after_indices = diseaseDict.get('lung_after_indices')[0:3]
+
+    X = Area
+
+    healthy = X[Y == 0, :]
+    lung = X[lung_before_indices, :]
+    lung_after = X[lung_after_indices, :]
+    X = np.concatenate((healthy, lung, lung_after), axis=0)
+
+    target_names = ['healthy', 'lung']
+
+    n_healthy = healthy.shape[0]
+    n_lung_before = len(lung_before_indices)
+    n_lung_after = len(lung_after_indices)
+
+    Y = get_Y({0: n_healthy, 1: n_lung_before, 2: n_lung_after})
+    # Y = np.zeros((n_healthy + n_lung_before + n_lung_after, 1), dtype='int')
+    # Y[n_healthy:, :] += 1
+    # Y[n_healthy + n_lung_before:, :] += 1
+    # Y = np.squeeze(Y)
+
+    return X, Y, target_names, Area, lung_series_dict
+
+def get_Y(dict):
+    Y = np.zeros(0, dtype=int)
+    for y1, num in dict.items():
+        Y1 = np.ones(num, dtype=int) * y1
+        Y = np.concatenate((Y, Y1))
+    return Y
+
+def load_lung_thoracic():
+    Height, Area, Y, diseaseDict, lung_series_dict = load_samples()
+    lung_before_indices = diseaseDict.get('lung_before_indices')
+    lung_after_indices = diseaseDict.get('lung_after_indices')[0:3]
+
+    X = Area
+
+    healthy = X[Y == 0, :]
+    lung = X[lung_before_indices, :]
+    lung_after = X[lung_after_indices, :]
+    X = np.concatenate((healthy, lung, lung_after), axis=0)
+
+    target_names = ['healthy', 'lung']
+
+    n_healthy = healthy.shape[0]
+    n_lung_before = len(lung_before_indices)
+    n_lung_after = len(lung_after_indices)
+
+    Y = np.zeros((n_healthy + n_lung_before + n_lung_after, 1), dtype='int')
+    Y[n_healthy:, :] += 1
+    Y[n_healthy + n_lung_before:, :] += 1
+    Y = np.squeeze(Y)
+
+    return X, Y, target_names
+
+def print_sample_num(Y):
+    uniques, counts = np.unique(Y, return_counts=True)
+    for i in range(uniques.shape[0]):
+        y = uniques[i]
+        count = counts[i]
+        print("sample ", y, " count ", count)
 
 ## 对数据进行分箱处理
 def Bining2(AreaY, XPeak, YPeak, width1=1, width2=2):
@@ -278,15 +503,23 @@ def Bining3(AreaY, XPeak, YPeak, width1=1, width2=2, ratio_zero=0.5):
     # print("Area_list: ", Area_list)
     print("Area_list.shape: ", Area_list.shape)
 
-    extra_index = []
-    for i in range(Area_list.shape[1]):
-        notZeroNum = np.size(np.where(Area_list[:, i] > 0))
-        if notZeroNum > sample_num * ratio_zero:
-            extra_index.append(i)
-    Area_del_0 = Area_list[:, extra_index]
-    print("Area_del_0.shape: ", Area_del_0.shape)
+    Area_del_0 = del_0(Area_list, ratio_zero)
 
     return Time_list, Area_list, Area_del_0
+
+# 删除data中0占比未达到p的特征列
+def del_0(data, p):
+    sample_num = data.shape[0]
+    feature_num = data.shape[1]
+
+    extra_index = []
+    for i in range(feature_num):
+        notZeroNum = np.size(np.where(data[:, i] > 0))
+        if notZeroNum > sample_num * p:
+            extra_index.append(i)
+    Area_del_0 = data[:, extra_index]
+    print("Area_del_0.shape: ", Area_del_0.shape)
+    return Area_del_0
 
 def get_col_min(i_to_j, j_max, sample_num, XPeak, default):
     arg_index = np.squeeze(np.argwhere(i_to_j <= j_max))
@@ -310,11 +543,7 @@ def get_col_min(i_to_j, j_max, sample_num, XPeak, default):
 
 # load_colon()
 
-def normalizeArea(X):
-    A_sum = np.sum(X, axis=1)
-    for i in range(X.shape[0]):
-        X[i, :] = X[i, :] / A_sum[i]
-    return X
+
 
 ## 对数据进行分箱处理
 def Bining(AreaY, XPeak, YPeak, padding, width=0.5, ratio=0.2):

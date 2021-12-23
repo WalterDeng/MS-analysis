@@ -14,7 +14,7 @@ random_state = np.random.RandomState(0)
 n_samples, n_features = X.shape
 X = np.c_[X, random_state.randn(n_samples, 200 * n_features)]
 
-def peak_subset_selection(X, y, max_feature=6, test_size=0.5, random_state=0):
+def peak_subset_selection(X, y, max_feature=6, test_size=0.4, random_state=0):
     n_samples, n_features = X.shape
     # shuffle and split training and test sets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
